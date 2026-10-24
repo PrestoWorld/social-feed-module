@@ -46,7 +46,7 @@ return new class implements MigrationInterface {
         $table->column('user_name')->string(255)->defaultValue('');
         $table->column('user_avatar')->string(500)->nullable();
         $table->column('type')->string(32)->defaultValue('status');
-        $table->column('content')->text()->defaultValue('');
+        $table->column('content')->text();
         $table->column('images')->text()->nullable();
         $table->column('gallery')->text()->nullable();
         $table->column('link_url')->string(500)->nullable();
@@ -87,7 +87,7 @@ return new class implements MigrationInterface {
         $table->column('user_id')->string(64)->defaultValue('');
         $table->column('user_name')->string(255)->defaultValue('');
         $table->column('user_avatar')->string(500)->nullable();
-        $table->column('content')->text()->defaultValue('');
+        $table->column('content')->text();
         $table->column('parent_id')->bigInteger()->defaultValue(0);
         $table->column('status')->string(32)->defaultValue('published');
         $table->column('payload')->text()->nullable();
