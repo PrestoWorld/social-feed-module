@@ -11,6 +11,7 @@ use PrestoWorld\Modules\SocialFeed\Contracts\CommentRepositoryInterface;
 use PrestoWorld\Modules\SocialFeed\Contracts\ReactionRepositoryInterface;
 use PrestoWorld\Modules\SocialFeed\Contracts\SocialPostRepositoryInterface;
 use PrestoWorld\Modules\SocialFeed\Headless\SocialFeedProvider;
+use PrestoWorld\Modules\SocialFeed\Status\StatusRegistry;
 use PrestoWorld\Modules\SocialFeed\Storage\SocialFeed\CollectionRepository;
 use PrestoWorld\Modules\SocialFeed\Storage\SocialFeed\CommentRepository;
 use PrestoWorld\Modules\SocialFeed\Storage\SocialFeed\ReactionRepository;
@@ -37,6 +38,7 @@ class Module extends WitalsModule
     public function register(): void
     {
         $this->bindRepositories();
+        $this->app->singleton(StatusRegistry::class, fn (): StatusRegistry => new StatusRegistry());
 
         $this->app->singleton(SocialFeedProvider::class, function (Application $app): SocialFeedProvider {
             return new SocialFeedProvider(
@@ -51,6 +53,8 @@ class Module extends WitalsModule
 
     public function boot(): void
     {
+        $this->registerDefaultStatuses();
+
         DashboardSubsystem::register(
             $this->app,
             'social-feed',
@@ -60,6 +64,16 @@ class Module extends WitalsModule
             10,
             'content',
         );
+    }
+
+    private function registerDefaultStatuses(): void
+    {
+        $registry = $this->app->make(StatusRegistry::class);
+        foreach (['published' => 'Đã xuất bản', 'draft' => 'Bản nháp', 'archived' => 'Lưu trữ'] as $status => $label) {
+            if (!$registry->has($status)) {
+                $registry->register($status, ['label' => $label]);
+            }
+        }
     }
 
     public function getName(): string { return 'SocialFeed'; }

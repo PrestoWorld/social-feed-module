@@ -4,8 +4,27 @@
     "description": "Social Feed module: social posts, comments, reactions, collections/favorites, ads, gallery",
     "author": "BookOwl Team",
     "namespace": "PrestoWorld\\Modules\\SocialFeed",
-    "providers": ["PrestoWorld\\Modules\\SocialFeed\\Module"],
-    "config": ["config/social-feed.php"],
-    "migrations": ["Migrations/001_social_feed_tables.php"],
-    "dependencies": {}
+    "providers": [
+        "PrestoWorld\\Modules\\SocialFeed\\Module"
+    ],
+    "config": [
+        "config/social-feed.php"
+    ],
+    "migrations": [
+        "Migrations/001_social_feed_tables.php"
+    ],
+    "dependencies": {
+        "headless-cms": "^1.0.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "PrestoWorld\\Modules\\SocialFeed\\": "."
+        }
+    },
+    "priority": 20,
+    "headless": {
+        "providers": {
+            "social-feed": "PrestoWorld\\Modules\\SocialFeed\\Headless\\SocialFeedProvider"
+        }
+    }
 }

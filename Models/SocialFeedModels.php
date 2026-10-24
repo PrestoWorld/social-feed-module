@@ -6,6 +6,17 @@ namespace PrestoWorld\Modules\SocialFeed\Models;
 
 class SocialPost
 {
+    public const STATUS_PUBLISHED = 'published';
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_ARCHIVED = 'archived';
+    public const STATUS_RENTED = 'rented';
+
+    /** @return list<string> */
+    public static function statuses(): array
+    {
+        return [self::STATUS_PUBLISHED, self::STATUS_DRAFT, self::STATUS_ARCHIVED, self::STATUS_RENTED];
+    }
+
     public int $id;
     public string $businessId;
     public string $externalId;

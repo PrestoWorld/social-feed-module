@@ -33,6 +33,12 @@ final class SocialPostRepository extends AbstractRepository implements SocialPos
         }
         $now = time();
 
+        $status = (string) ($data['status'] ?? 'published');
+        $allowed = ['published', 'draft', 'archived', 'rented'];
+        if (!in_array($status, $allowed, true)) {
+            $status = 'published';
+        }
+
         $values = [
             'business_id' => $businessId,
             'external_id' => $externalId,
@@ -51,7 +57,7 @@ final class SocialPostRepository extends AbstractRepository implements SocialPos
             'thumbnail_url' => $data['thumbnail_url'] ?? null,
             'platform' => $data['platform'] ?? null,
             'duration' => (int) ($data['duration'] ?? 0),
-            'status' => (string) ($data['status'] ?? 'published'),
+            'status' => $status,
             'comment_count' => (int) ($data['comment_count'] ?? 0),
             'reaction_count' => (int) ($data['reaction_count'] ?? 0),
             'share_count' => (int) ($data['share_count'] ?? 0),
@@ -91,6 +97,10 @@ final class SocialPostRepository extends AbstractRepository implements SocialPos
 
     public function toggleStatus(string $businessId, string $externalId, string $status): bool
     {
+        $allowed = ['published', 'draft', 'archived', 'rented'];
+        if (!in_array($status, $allowed, true)) {
+            return false;
+        }
         $this->db->update($this->table('social_posts'), ['status' => $status, 'updated_at' => time()], ['business_id' => $businessId, 'external_id' => $externalId])->run();
         return true;
     }
