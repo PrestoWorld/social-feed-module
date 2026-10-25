@@ -1,4 +1,5 @@
 {
+    "$schema": "https://prestoworld.pages.dev/schemas/module-manifest/v1.json",
     "name": "social-feed",
     "version": "1.0.0",
     "description": "Social Feed module: social posts, comments, reactions, collections/favorites, ads, gallery",
@@ -26,5 +27,10 @@
         "providers": {
             "social-feed": "PrestoWorld\\Modules\\SocialFeed\\Headless\\SocialFeedProvider"
         }
+    },
+    "screens": {
+        "social-feed": "socialfeed-screens",
+        "social-ads": "socialfeed-screens",
+        "social-gallery": "socialfeed-screens"
     }
 }
