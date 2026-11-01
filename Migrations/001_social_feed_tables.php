@@ -47,6 +47,7 @@ return new class implements MigrationInterface {
         $table->column('user_avatar')->string(500)->nullable();
         $table->column('type')->string(32)->defaultValue('status');
         $table->column('content')->text();
+        $table->column('book_id')->string(64)->nullable();
         $table->column('images')->text()->nullable();
         $table->column('gallery')->text()->nullable();
         $table->column('link_url')->string(500)->nullable();
@@ -73,6 +74,7 @@ return new class implements MigrationInterface {
         $table->index(['business_id', 'user_id']);
         $table->index(['business_id', 'type']);
         $table->index(['business_id', 'status']);
+        $table->index(['book_id']);
         $table->index(['created_at']);
         $table->save();
     }

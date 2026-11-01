@@ -36,7 +36,7 @@ final class CommentRepository extends AbstractRepository implements CommentRepos
             'user_name' => $data['user_name'] ?? '',
             'user_avatar' => $data['user_avatar'] ?? null,
             'content' => (string) ($data['content'] ?? ''),
-            'parent_id' => (int) ($data['parent_id'] ?? 0),
+            'parent_id' => !empty($data['parent_id']) ? (string) $data['parent_id'] : null,
             'status' => (string) ($data['status'] ?? 'published'),
             'payload' => $this->encode($data['payload'] ?? []),
             'created_at' => (int) ($data['created_at'] ?? $now),
@@ -46,10 +46,11 @@ final class CommentRepository extends AbstractRepository implements CommentRepos
         $existing = $this->db->select('id')->from($this->table('social_comments'))->where('business_id', $businessId)->where('external_id', $externalId)->run()->fetch();
 
         if ($existing === false) {
-            $result = $this->db->insert($this->table('social_comments'))->values($values)->run();
-            $values['id'] = (int) $result;
+            $id = $this->uuid();
+            $this->db->insert($this->table('social_comments'))->values(['id' => $id] + $values)->run();
+            $values['id'] = $id;
         } else {
-            $id = $this->int($existing, 'id');
+            $id = $this->strId($existing);
             $this->db->update($this->table('social_comments'), $values, ['id' => $id])->run();
             $values['id'] = $id;
         }

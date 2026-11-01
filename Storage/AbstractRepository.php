@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PrestoWorld\Modules\SocialFeed\Storage;
 
 use Cycle\Database\DatabaseInterface;
+use PrestoWorld\Core\Uuid;
 
 abstract class AbstractRepository
 {
@@ -20,4 +21,10 @@ abstract class AbstractRepository
     protected function decoded(mixed $row): array { if (!is_array($row)) return []; if (isset($row['payload'])) $row['payload'] = $this->decode($row['payload']); return $row; }
     protected function int(mixed $row, string $key, int $default = 0): int { if (!is_array($row) || !isset($row[$key])) return $default; $v = $row[$key]; return is_int($v) ? $v : (is_numeric($v) ? (int)$v : $default); }
     protected function decodeJson(?string $v): array { if (!$v) return []; $d = json_decode($v, true); return is_array($d) ? $d : []; }
+    /**
+     * PK của các bảng social feed là UUID string (xem migration 002_social_feed_uuid).
+     * id trả ra qua API luôn là UUID, không phải số tự tăng.
+     */
+    protected function uuid(): string { return Uuid::v4(); }
+    protected function strId(mixed $row): string { return is_array($row) && isset($row['id']) ? (string) $row['id'] : ''; }
 }

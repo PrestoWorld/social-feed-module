@@ -17,7 +17,8 @@ class SocialPost
         return [self::STATUS_PUBLISHED, self::STATUS_DRAFT, self::STATUS_ARCHIVED, self::STATUS_RENTED];
     }
 
-    public int $id;
+    /** UUID string (PK — xem migration 002_social_feed_uuid). */
+    public string $id;
     public string $businessId;
     public string $externalId;
     public string $userId;
@@ -25,6 +26,8 @@ class SocialPost
     public ?string $userAvatar;
     public string $type;
     public string $content;
+    /** ID sách tham chiếu (bow_product_masters) — nullable, chỉ có khi post/quote gắn với sách. */
+    public ?string $bookId;
     public array $images;
     public array $gallery;
     public ?string $linkUrl;
@@ -40,7 +43,7 @@ class SocialPost
 
     public function __construct(array $data)
     {
-        $this->id = (int) ($data['id'] ?? 0);
+        $this->id = (string) ($data['id'] ?? '');
         $this->businessId = (string) ($data['business_id'] ?? '');
         $this->externalId = (string) ($data['external_id'] ?? '');
         $this->userId = (string) ($data['user_id'] ?? '');
@@ -48,6 +51,9 @@ class SocialPost
         $this->userAvatar = $data['user_avatar'] ?? null;
         $this->type = (string) ($data['type'] ?? 'status');
         $this->content = (string) ($data['content'] ?? '');
+        $this->bookId = isset($data['book_id']) && $data['book_id'] !== '' && $data['book_id'] !== null
+            ? (string) $data['book_id']
+            : null;
         $this->images = is_array($data['images'] ?? null) ? $data['images'] : (is_string($data['images'] ?? null) ? json_decode((string) $data['images'], true) ?? [] : []);
         $this->gallery = is_array($data['gallery'] ?? null) ? $data['gallery'] : (is_string($data['gallery'] ?? null) ? json_decode((string) $data['gallery'], true) ?? [] : []);
         $this->linkUrl = $data['link_url'] ?? null;

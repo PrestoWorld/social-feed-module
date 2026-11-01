@@ -47,6 +47,9 @@ final class SocialPostRepository extends AbstractRepository implements SocialPos
             'user_avatar' => $data['user_avatar'] ?? null,
             'type' => (string) ($data['type'] ?? 'status'),
             'content' => (string) ($data['content'] ?? ''),
+            'book_id' => isset($data['book_id']) && $data['book_id'] !== '' && $data['book_id'] !== null
+                ? (string) $data['book_id']
+                : null,
             'images' => isset($data['images']) && is_array($data['images']) ? json_encode($data['images']) : ($data['images'] ?? null),
             'gallery' => isset($data['gallery']) && is_array($data['gallery']) ? json_encode($data['gallery']) : ($data['gallery'] ?? null),
             'link_url' => $data['link_url'] ?? null,
@@ -74,10 +77,11 @@ final class SocialPostRepository extends AbstractRepository implements SocialPos
         $existing = $this->db->select('id')->from($this->table('social_posts'))->where('business_id', $businessId)->where('external_id', $externalId)->run()->fetch();
 
         if ($existing === false) {
-            $result = $this->db->insert($this->table('social_posts'))->values($values)->run();
-            $values['id'] = (int) $result;
+            $id = $this->uuid();
+            $this->db->insert($this->table('social_posts'))->values(['id' => $id] + $values)->run();
+            $values['id'] = $id;
         } else {
-            $id = $this->int($existing, 'id');
+            $id = $this->strId($existing);
             $this->db->update($this->table('social_posts'), $values, ['id' => $id])->run();
             $values['id'] = $id;
         }

@@ -43,10 +43,11 @@ final class CollectionRepository extends AbstractRepository implements Collectio
         $existing = $this->db->select('id')->from($this->table('social_collections'))->where('business_id', $businessId)->where('external_id', $externalId)->run()->fetch();
 
         if ($existing === false) {
-            $result = $this->db->insert($this->table('social_collections'))->values($values)->run();
-            $values['id'] = (int) $result;
+            $id = $this->uuid();
+            $this->db->insert($this->table('social_collections'))->values(['id' => $id] + $values)->run();
+            $values['id'] = $id;
         } else {
-            $id = $this->int($existing, 'id');
+            $id = $this->strId($existing);
             $this->db->update($this->table('social_collections'), $values, ['id' => $id])->run();
             $values['id'] = $id;
         }

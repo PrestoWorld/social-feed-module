@@ -18,9 +18,10 @@ final class ReactionRepository extends AbstractRepository implements ReactionRep
             ->run()->fetch();
 
         if ($existing === false) {
-            $externalId = 'reaction_' . bin2hex(random_bytes(8));
+            $externalId = $this->uuid();
             $now = time();
             $this->db->insert($this->table('social_reactions'))->values([
+                'id' => $this->uuid(),
                 'external_id' => $externalId,
                 'business_id' => $businessId,
                 'user_id' => $userId,
@@ -33,12 +34,13 @@ final class ReactionRepository extends AbstractRepository implements ReactionRep
         }
 
         $existing = (array) $existing;
+        $id = $this->strId($existing);
         if ((string) $existing['type'] === $type) {
-            $this->db->delete($this->table('social_reactions'))->where('id', $this->int($existing, 'id'))->run();
+            $this->db->delete($this->table('social_reactions'))->where('id', $id)->run();
             return ['action' => 'removed'];
         }
 
-        $this->db->update($this->table('social_reactions'), ['type' => $type, 'updated_at' => time()], ['id' => $this->int($existing, 'id')])->run();
+        $this->db->update($this->table('social_reactions'), ['type' => $type, 'updated_at' => time()], ['id' => $id])->run();
         return ['action' => 'changed', 'type' => $type];
     }
 
