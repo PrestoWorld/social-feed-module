@@ -74,11 +74,11 @@ return new class implements MigrationInterface {
 
     public function up(DatabaseInterface $db, string $prefix): void
     {
-        $driver = $db->getType();
+        $driver = strtolower($db->getType());
 
         foreach (self::UUID_PK_TABLES as $name) {
             $table = $prefix . $name;
-            if (!$db->hasTable($table)) {
+            if (!$this->tableExists($db, $table)) {
                 continue;
             }
 
@@ -94,7 +94,8 @@ return new class implements MigrationInterface {
                 ? $this->rebuildSqlite($db, $table)
                 : $this->convertPrimaryKey($db, $table, $driver);
 
-            if ($name === 'social_comments') {
+            // rebuildSqlite đã map parent_id inline; mysql/pgsql cần convert riêng.
+            if ($name === 'social_comments' && $driver !== 'sqlite') {
                 $this->convertParentId($db, $table, $driver, $idMap);
             }
         }
@@ -102,9 +103,11 @@ return new class implements MigrationInterface {
 
     public function down(DatabaseInterface $db, string $prefix): void
     {
+        $driver = strtolower($db->getType());
+
         foreach (self::UUID_PK_TABLES as $name) {
             $table = $prefix . $name;
-            if (!$db->hasTable($table)) {
+            if (!$this->tableExists($db, $table)) {
                 continue;
             }
 
@@ -113,22 +116,69 @@ return new class implements MigrationInterface {
     }
 
     /**
+     * Kiểm tra bảng tồn tại. Với sqlite dùng PRAGMA (hasTable() giữ read
+     * lock và làm DROP TABLE fail); driver khác dùng hasTable().
+     */
+    private function tableExists(DatabaseInterface $db, string $table): bool
+    {
+        if (strtolower($db->getType()) === 'sqlite') {
+            return $this->sqliteColumns($db, $table) !== [];
+        }
+
+        return $db->hasTable($table);
+    }
+
+    /**
      * Cột `id` đã là string (UUID) chưa?
      */
     private function idIsUuid(DatabaseInterface $db, string $table): bool
     {
-        $schema = $db->table($table)->getSchema();
-        if (!$schema instanceof \Cycle\Database\Table) {
-            return false;
-        }
-
-        foreach ($schema->getColumns() as $column) {
-            if ($column->getName() === 'id') {
-                return $column->getAbstractType() === 'string';
+        foreach ($this->readColumns($db, $table) as $col) {
+            if ($col['name'] === 'id') {
+                return $col['isString'];
             }
         }
 
         return false;
+    }
+
+    /**
+     * Đọc danh sách cột của bảng. Với sqlite dùng PRAGMA (đóng statement
+     * ngay để tránh giữ read lock — getSchema() sẽ giữ lock và làm DROP
+     * TABLE fail); driver khác dùng getSchema().
+     *
+     * @return list<array{name: string, isString: bool}>
+     */
+    private function readColumns(DatabaseInterface $db, string $table): array
+    {
+        if (strtolower($db->getType()) === 'sqlite') {
+            $columns = [];
+            foreach ($this->sqliteColumns($db, $table) as $col) {
+                $columns[] = [
+                    'name' => $col['name'],
+                    'isString' => strtoupper($col['type']) === 'TEXT'
+                        || str_starts_with(strtoupper($col['type']), 'VARCHAR')
+                        || str_starts_with(strtoupper($col['type']), 'CHAR'),
+                ];
+            }
+
+            return $columns;
+        }
+
+        $schema = $db->table($table)->getSchema();
+        if (!$schema instanceof \Cycle\Database\Table) {
+            return [];
+        }
+
+        $columns = [];
+        foreach ($schema->getColumns() as $column) {
+            $columns[] = [
+                'name' => $column->getName(),
+                'isString' => $column->getAbstractType() === 'string',
+            ];
+        }
+
+        return $columns;
     }
 
     /**
@@ -138,7 +188,7 @@ return new class implements MigrationInterface {
      */
     private function addBookReferenceColumn(DatabaseInterface $db, string $table, string $driver): void
     {
-        if ($this->hasColumn($db, $table, 'book_id')) {
+        if ($this->tableHasColumn($db, $table, 'book_id')) {
             return;
         }
 
@@ -147,15 +197,10 @@ return new class implements MigrationInterface {
         $db->execute("CREATE INDEX \"{$table}_book_id\" ON {$quoted} (\"book_id\")");
     }
 
-    private function hasColumn(DatabaseInterface $db, string $table, string $column): bool
+    private function tableHasColumn(DatabaseInterface $db, string $table, string $column): bool
     {
-        $schema = $db->table($table)->getSchema();
-        if (!$schema instanceof \Cycle\Database\Table) {
-            return false;
-        }
-
-        foreach ($schema->getColumns() as $existing) {
-            if ($existing->getName() === $column) {
+        foreach ($this->readColumns($db, $table) as $existing) {
+            if ($existing['name'] === $column) {
                 return true;
             }
         }
@@ -289,11 +334,15 @@ return new class implements MigrationInterface {
             }
 
             $type = strtoupper($col['type']);
+            $def = '"' . $col['name'] . '" ' . $type;
+
             if ($col['name'] === 'parent_id') {
-                $type = 'TEXT';
+                // parent_id chuyển sang UUID nullable (NULL = comment gốc).
+                // Bỏ NOT NULL/DEFAULT legacy.
+                $defs[] = '"parent_id" TEXT NULL';
+                continue;
             }
 
-            $def = '"' . $col['name'] . '" ' . $type;
             if ($col['notnull']) {
                 $def .= ' NOT NULL';
             }
@@ -305,7 +354,9 @@ return new class implements MigrationInterface {
 
         $db->execute('CREATE TABLE "' . $newTable . '" (' . implode(', ', $defs) . ')');
 
-        $legacyRows = $db->query('SELECT "id" FROM "' . $table . '"')->fetchAll();
+        $stmt = $db->query('SELECT "id" FROM "' . $table . '"');
+        $legacyRows = $stmt->fetchAll();
+        $stmt->close();
         $map = [];
         foreach ($legacyRows as $row) {
             if (is_array($row) && isset($row['id'])) {
@@ -314,7 +365,9 @@ return new class implements MigrationInterface {
             }
         }
 
-        $rows = $db->query('SELECT * FROM "' . $table . '"')->fetchAll();
+        $stmt = $db->query('SELECT * FROM "' . $table . '"');
+        $rows = $stmt->fetchAll();
+        $stmt->close();
         foreach ($rows as $row) {
             if (!is_array($row) || !isset($row['id'])) {
                 continue;
@@ -361,7 +414,9 @@ return new class implements MigrationInterface {
         $order = $this->hasColumn($columns, 'created_at')
             ? 'ORDER BY "created_at", "id"'
             : 'ORDER BY "id"';
-        $rows = $db->query('SELECT * FROM "' . $table . '" ' . $order)->fetchAll();
+        $stmt = $db->query('SELECT * FROM "' . $table . '" ' . $order);
+        $rows = $stmt->fetchAll();
+        $stmt->close();
 
         $legacyColumns = $this->legacyColumnNames($name);
         $seq = 1;
@@ -413,7 +468,9 @@ return new class implements MigrationInterface {
      */
     private function sqliteColumns(DatabaseInterface $db, string $table): array
     {
-        $rows = $db->query('PRAGMA table_info("' . $table . '")')->fetchAll();
+        $stmt = $db->query('PRAGMA table_info("' . $table . '")');
+        $rows = $stmt->fetchAll();
+        $stmt->close();
         $columns = [];
 
         foreach ($rows as $row) {

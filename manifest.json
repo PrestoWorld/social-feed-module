@@ -12,7 +12,8 @@
         "config/social-feed.php"
     ],
     "migrations": [
-        "Migrations/001_social_feed_tables.php"
+        "Migrations/001_social_feed_tables.php",
+        "Migrations/002_social_feed_uuid.php"
     ],
     "dependencies": {
         "headless-cms": "^1.0.0"
