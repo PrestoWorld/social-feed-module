@@ -64,12 +64,19 @@ final class CollectionRepository extends AbstractRepository implements Collectio
             ->where('post_external_id', $postExternalId)
             ->run()->fetch();
         if ($exists === false) {
+            // 002 đổi PK sang UUID không auto-increment -> insert bắt buộc có id,
+            // nếu không sẽ fatal NOT NULL constraint failed.
             $this->db->insert($this->table('social_collection_items'))->values([
+                'id' => $this->uuid(),
                 'collection_id' => $collectionId,
                 'post_external_id' => $postExternalId,
                 'created_at' => time(),
             ])->run();
-            $this->db->update($this->table('social_collections'), ['item_count' => new \Cycle\Database\Expression\Raw('item_count + 1')], ['external_id' => $collectionId])->run();
+            // SQL thô: Cycle 2.23 không có Expression\Raw (fatal nếu dùng).
+            $this->db->execute(
+                'UPDATE ' . $this->table('social_collections') . ' SET item_count = item_count + 1 WHERE external_id = ?',
+                [$collectionId],
+            );
         }
         return true;
     }
@@ -81,7 +88,14 @@ final class CollectionRepository extends AbstractRepository implements Collectio
             ->where('post_external_id', $postExternalId)
             ->run();
         if ($result > 0) {
-            $this->db->update($this->table('social_collections'), ['item_count' => new \Cycle\Database\Expression\Raw('GREATEST(item_count - 1, 0)')], ['external_id' => $collectionId])->run();
+            // CASE WHEN thay cho GREATEST(): GREATEST cần SQLite >= 3.35,
+            // CASE WHEN chạy được trên cả mysql / pgsql / sqlite mọi bản.
+            $this->db->execute(
+                'UPDATE ' . $this->table('social_collections')
+                    . ' SET item_count = CASE WHEN item_count > 0 THEN item_count - 1 ELSE 0 END'
+                    . ' WHERE external_id = ?',
+                [$collectionId],
+            );
         }
         return $result > 0;
     }

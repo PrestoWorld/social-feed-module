@@ -137,7 +137,7 @@ final class SocialPostRepository extends AbstractRepository implements SocialPos
 
     public function incrementView(string $externalId): void
     {
-        $this->db->update($this->table('social_posts'), ['view_count' => new \Cycle\Database\Expression\Raw('view_count + 1'), 'updated_at' => time()], ['external_id' => $externalId])->run();
+        $this->bump('view_count', $externalId);
     }
 
     /**
@@ -198,12 +198,28 @@ final class SocialPostRepository extends AbstractRepository implements SocialPos
 
     public function incrementClick(string $externalId): void
     {
-        $this->db->update($this->table('social_posts'), ['click_count' => new \Cycle\Database\Expression\Raw('click_count + 1'), 'updated_at' => time()], ['external_id' => $externalId])->run();
+        $this->bump('click_count', $externalId);
     }
 
     public function incrementPlay(string $externalId): void
     {
-        $this->db->update($this->table('social_posts'), ['play_count' => new \Cycle\Database\Expression\Raw('play_count + 1'), 'updated_at' => time()], ['external_id' => $externalId])->run();
+        $this->bump('play_count', $externalId);
+    }
+
+    /**
+     * Tăng counter nguyên tử bằng SQL thô: Cycle 2.23 không có Expression\Raw
+     * (dùng nó sẽ fatal "class not found"), còn `col = col + 1` chạy được trên
+     * mysql / pgsql / sqlite.
+     *
+     * $column chỉ là tên cột do class này tự đặt, không nhận input từ ngoài.
+     */
+    private function bump(string $column, string $externalId): void
+    {
+        $table = $this->table('social_posts');
+        $this->db->execute(
+            "UPDATE {$table} SET {$column} = {$column} + 1, updated_at = ? WHERE external_id = ?",
+            [time(), $externalId],
+        );
     }
 
     private function applyFilters(SelectQuery $query, string $businessId, array $filters): SelectQuery
