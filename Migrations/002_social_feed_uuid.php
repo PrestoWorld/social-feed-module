@@ -166,7 +166,9 @@ return new class implements MigrationInterface {
         }
 
         $schema = $db->table($table)->getSchema();
-        if (!$schema instanceof \Cycle\Database\Table) {
+        // getSchema() trả driver table (vd. MySQLTable) extends Schema\AbstractTable,
+        // KHÔNG phải Cycle\Database\Table — kiểm tra sai khiến guard luôn trả [].
+        if (!$schema instanceof \Cycle\Database\Schema\AbstractTable) {
             return [];
         }
 
@@ -192,9 +194,15 @@ return new class implements MigrationInterface {
             return;
         }
 
-        $quoted = $driver === 'mysql' ? "`{$table}`" : "\"{$table}\"";
-        $db->execute("ALTER TABLE {$quoted} ADD COLUMN \"book_id\" VARCHAR(64) NULL");
-        $db->execute("CREATE INDEX \"{$table}_book_id\" ON {$quoted} (\"book_id\")");
+        // mysql dùng backtick (ANSI_QUOTES thường tắt -> chuỗi nháy kép bị coi là literal),
+        // pgsql / sqlite dùng nháy kép.
+        $q = $driver === 'mysql'
+            ? static fn (string $identifier): string => "`{$identifier}`"
+            : static fn (string $identifier): string => "\"{$identifier}\"";
+
+        $t = $q($table);
+        $db->execute("ALTER TABLE {$t} ADD COLUMN {$q('book_id')} VARCHAR(64) NULL");
+        $db->execute("CREATE INDEX {$q($table . '_book_id')} ON {$t} ({$q('book_id')})");
     }
 
     private function tableHasColumn(DatabaseInterface $db, string $table, string $column): bool

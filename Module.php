@@ -6,17 +6,24 @@ namespace PrestoWorld\Modules\SocialFeed;
 
 use Cycle\Database\DatabaseInterface;
 use PrestoWorld\Foundation\Admin\DashboardSubsystem;
+use PrestoWorld\Modules\SocialFeed\Console\GenerateSlugsCommand;
 use PrestoWorld\Modules\SocialFeed\Contracts\CollectionRepositoryInterface;
 use PrestoWorld\Modules\SocialFeed\Contracts\CommentRepositoryInterface;
+use PrestoWorld\Modules\SocialFeed\Contracts\GroqClientInterface;
 use PrestoWorld\Modules\SocialFeed\Contracts\ReactionRepositoryInterface;
 use PrestoWorld\Modules\SocialFeed\Contracts\SocialPostRepositoryInterface;
 use PrestoWorld\Modules\SocialFeed\Headless\SocialFeedProvider;
+use PrestoWorld\Modules\SocialFeed\Services\GroqClient;
+use PrestoWorld\Modules\SocialFeed\Services\SlugComposer;
+use PrestoWorld\Modules\SocialFeed\Services\SlugDispatcher;
+use PrestoWorld\Modules\SocialFeed\Services\SlugProcessor;
 use PrestoWorld\Modules\SocialFeed\Status\StatusRegistry;
 use PrestoWorld\Modules\SocialFeed\Storage\SocialFeed\CollectionRepository;
 use PrestoWorld\Modules\SocialFeed\Storage\SocialFeed\CommentRepository;
 use PrestoWorld\Modules\SocialFeed\Storage\SocialFeed\ReactionRepository;
 use PrestoWorld\Modules\SocialFeed\Storage\SocialFeed\SocialPostRepository;
 use Witals\Framework\Application;
+use Witals\Framework\Console\Kernel;
 use Witals\Framework\Module\Module as WitalsModule;
 
 class Module extends WitalsModule
@@ -37,6 +44,7 @@ class Module extends WitalsModule
 
     public function register(): void
     {
+        $this->registerSlugServices();
         $this->bindRepositories();
         $this->app->singleton(StatusRegistry::class, fn (): StatusRegistry => new StatusRegistry());
 
@@ -54,6 +62,7 @@ class Module extends WitalsModule
     public function boot(): void
     {
         $this->registerDefaultStatuses();
+        $this->registerConsoleCommands();
 
         DashboardSubsystem::register(
             $this->app,
@@ -82,6 +91,7 @@ class Module extends WitalsModule
     {
         $prefix = fn (Application $app): string => (string) ($app->config('social-feed.table_prefix', 'pw_') ?: 'pw_');
         $db = fn (Application $app): DatabaseInterface => $this->resolveDatabase($app);
+        $slug = fn (Application $app): ?SlugDispatcher => $this->resolve($app, SlugDispatcher::class);
 
         $bindings = [
             SocialPostRepositoryInterface::class => SocialPostRepository::class,
@@ -91,8 +101,46 @@ class Module extends WitalsModule
         ];
 
         foreach ($bindings as $abstract => $concrete) {
+            if ($concrete === SocialPostRepository::class) {
+                $this->app->singleton($abstract, fn (Application $app) => new $concrete($db($app), $prefix($app), $slug($app)));
+                continue;
+            }
+
             $this->app->singleton($abstract, fn (Application $app) => new $concrete($db($app), $prefix($app)));
         }
+    }
+
+    /**
+     * Dịch vụ sinh slug AI: composer (thuần, không I/O) + Groq client + processor.
+     * SlugDispatcher được bind cùng chỗ để repository đẩy job ngay khi post tạo.
+     */
+    private function registerSlugServices(): void
+    {
+        $this->app->singleton(SlugComposer::class, fn (): SlugComposer => new SlugComposer());
+        $this->app->singleton(GroqClient::class, fn (Application $app): GroqClient => new GroqClient($app));
+        $this->app->singleton(GroqClientInterface::class, fn (Application $app): GroqClientInterface => $this->resolve($app, GroqClient::class));
+        $this->app->singleton(SlugDispatcher::class, fn (Application $app): SlugDispatcher => new SlugDispatcher($app));
+        $this->app->singleton(SlugProcessor::class, function (Application $app): SlugProcessor {
+            $posts = $this->resolve($app, SocialPostRepositoryInterface::class);
+            $groq = $this->resolve($app, GroqClientInterface::class);
+            $composer = $this->resolve($app, SlugComposer::class);
+
+            return new SlugProcessor($posts, $groq, $composer);
+        });
+    }
+
+    private function registerConsoleCommands(): void
+    {
+        if (!$this->app->has(Kernel::class)) {
+            return;
+        }
+
+        $kernel = $this->app->make(Kernel::class);
+        if (!$kernel instanceof Kernel) {
+            return;
+        }
+
+        $kernel->register(GenerateSlugsCommand::class);
     }
 
     private function headlessBusinessId(Application $app): string

@@ -10,6 +10,14 @@ use PrestoWorld\Modules\SocialFeed\Storage\AbstractRepository;
 
 final class SocialPostRepository extends AbstractRepository implements SocialPostRepositoryInterface
 {
+    public function __construct(
+        \Cycle\Database\DatabaseInterface $db,
+        string $prefix,
+        private readonly ?\PrestoWorld\Modules\SocialFeed\Services\SlugDispatcher $slugDispatcher = null,
+    ) {
+        parent::__construct($db, $prefix);
+    }
+
     public function search(string $businessId, array $filters, int $offset, int $size, array $sort = []): array
     {
         [$column, $direction] = $this->ordering($sort);
@@ -74,14 +82,32 @@ final class SocialPostRepository extends AbstractRepository implements SocialPos
             'updated_at' => (int) ($data['updated_at'] ?? $now),
         ];
 
-        $existing = $this->db->select('id')->from($this->table('social_posts'))->where('business_id', $businessId)->where('external_id', $externalId)->run()->fetch();
+        $existing = $this->db->select('id', 'slug')->from($this->table('social_posts'))->where('business_id', $businessId)->where('external_id', $externalId)->run()->fetch();
 
         if ($existing === false) {
             $id = $this->uuid();
-            $this->db->insert($this->table('social_posts'))->values(['id' => $id] + $values)->run();
+
+            // Slug mặc định = UUID của post; slug_generated = false để worker
+            // chạy nền sinh slug AI qua Groq (xem Migrations/003_social_feed_slug).
+            $defaultSlug = substr($id, 0, 60);
+
+            $slugValues = [
+                'slug' => $defaultSlug,
+                'slug_generated' => false,
+                'retries' => 0,
+            ];
+
+            $this->db->insert($this->table('social_posts'))->values(['id' => $id] + $values + $slugValues)->run();
             $values['id'] = $id;
+            $values['slug'] = $defaultSlug;
+            $values['slug_generated'] = false;
+            $values['retries'] = 0;
+
+            $this->slugDispatcher?->dispatch($businessId, $externalId);
         } else {
             $id = $this->strId($existing);
+            // Giữ nguyên slug + cờ sinh slug đang có (không reset retries/flag khi update).
+            $values['slug'] = (string) ($existing['slug'] ?? '');
             $this->db->update($this->table('social_posts'), $values, ['id' => $id])->run();
             $values['id'] = $id;
         }
@@ -112,6 +138,62 @@ final class SocialPostRepository extends AbstractRepository implements SocialPos
     public function incrementView(string $externalId): void
     {
         $this->db->update($this->table('social_posts'), ['view_count' => new \Cycle\Database\Expression\Raw('view_count + 1'), 'updated_at' => time()], ['external_id' => $externalId])->run();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function pendingSlug(int $limit): array
+    {
+        if ($limit < 1) {
+            $limit = 1;
+        }
+
+        // slug_generated = false -> post chưa có slug AI; retries ASC -> post
+        // thất bại nhiều lần bị đẩy ra sau, post mới nhất được xử lý trước.
+        //
+        // Dùng SQL thô với literal TRUE/FALSE thay vì bind parameter: pdo_pgsql
+        // không ép integer -> boolean, còn mysql / sqlite nhận cả hai.
+        $table = $this->table('social_posts');
+        $rows = $this->db->query(
+            "SELECT * FROM {$table} WHERE slug_generated = FALSE"
+            . ' ORDER BY retries ASC, created_at ASC LIMIT ' . $limit,
+        )->fetchAll();
+
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        return $this->rows($rows);
+    }
+
+    public function markSlugGenerated(string $id, string $slug): bool
+    {
+        $slug = substr($slug, 0, 60);
+        if ($slug === '') {
+            return false;
+        }
+
+        $table = $this->table('social_posts');
+        $result = $this->db->execute(
+            "UPDATE {$table} SET slug = ?, slug_generated = TRUE, updated_at = ? WHERE id = ?",
+            [$slug, time(), $id],
+        );
+
+        return $result > 0;
+    }
+
+    public function markSlugFailed(string $id): bool
+    {
+        // Tăng retries nguyên tử: Cycle 2.23 không có Expression\Raw nên
+        // `retries = retries + 1` viết thẳng — chạy được trên mysql / pgsql / sqlite.
+        $table = $this->table('social_posts');
+        $result = $this->db->execute(
+            "UPDATE {$table} SET slug_generated = FALSE, retries = retries + 1, updated_at = ? WHERE id = ?",
+            [time(), $id],
+        );
+
+        return $result > 0;
     }
 
     public function incrementClick(string $externalId): void
