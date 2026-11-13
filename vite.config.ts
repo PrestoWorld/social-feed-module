@@ -1,12 +1,19 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   esbuild: {
     jsx: 'automatic',
     jsxImportSource: 'react',
+  },
+  resolve: {
+    alias: {
+      '@prestoworld/menu-registry': path.resolve(__dirname, '../../shared/menu-registry'),
+    },
+    conditions: ['development', 'browser'],
   },
   base: '/assets/modules/socialfeed/',
   build: {
@@ -46,8 +53,5 @@ export default defineConfig({
         },
       },
     },
-  },
-  resolve: {
-    conditions: ['development', 'browser'],
   },
 });
