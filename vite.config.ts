@@ -15,7 +15,7 @@ export default defineConfig({
     manifest: true,
     sourcemap: true,
     lib: {
-      entry: 'src/components/pages/index.ts',
+      entry: 'src/index.tsx',
       formats: ['iife'],
       name: 'SocialFeedScreens',
       fileName: (format) => `socialfeed-screens.[hash].js`,
